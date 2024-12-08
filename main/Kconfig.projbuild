@@ -1,11 +1,43 @@
-menu "USB WebCam config"
+menu "USB Microphone Configuration"
+
+    config MIC_SAMPLE_RATE
+        int "Audio Sample Rate"
+        default 44100
+        help
+            Set the audio sample rate frequency. Usually 16000 or 44100 Hz if PCM data format supported.
+            Oversample rate usually can be 2048000 or 5644800 Hz if only raw PDM data format supported.
+
+    config MIC_BIT_DEPTH
+        int "Audio Bit Depth"
+        default 16
+        help
+            Define the number of bits for each sample. Default 16 bits per sample.
+    
+    menu "Microphone Pin Configurationn"
+
+        config MIC_PIN_DATA
+            int "I2S Data"
+            default 41
+            help
+                Set data pin.
+    
+        config MIC_PIN_CLK
+            int "I2S Clock"
+            default 42
+            help
+                Set CLK pin.
+
+    endmenu
+endmenu
+
+menu "USB WebCam Configuration"
 
     config CAMERA_XCLK_FREQ
         int "XCLK frequency"
         range 1000000 40000000
         default 20000000
         help
-            Select XCLK frequency.
+            Set XCLK frequency.
 
     menu "Camera Pin Configuration"
 
@@ -13,97 +45,97 @@ menu "USB WebCam config"
             int "Power Down"
             default -1
             help
-                Select Power Down pin or -1 for unmanaged.
+                Set Power Down pin or -1 for unmanaged.
 
         config CAMERA_PIN_RESET
             int "Reset"
             default -1
             help
-                Select Camera Reset pin or -1 for software reset.
+                Set Reset pin or -1 for software reset.
 
         config CAMERA_PIN_XCLK
             int "XCLK"
             default 10
             help
-                Select Camera XCLK pin.
+                Set XCLK pin.
 
         config CAMERA_PIN_SIOD
             int "SIOD"
             default 40
             help
-                Select Camera SIOD pin.
+                Set SIOD pin.
 
         config CAMERA_PIN_SIOC
             int "SIOC"
             default 39
             help
-                Select Camera SIOC pin.
+                Set SIOC pin.
 
         config CAMERA_PIN_VSYNC
             int "VSYNC"
             default 38
             help
-                Select Camera VSYNC pin.
+                Set VSYNC pin.
 
         config CAMERA_PIN_HREF
             int "HREF"
             default 47
             help
-                Select Camera HREF pin.
+                Set HREF pin.
 
         config CAMERA_PIN_PCLK
             int "PCLK"
             default 13
             help
-                Select Camera PCLK pin.
+                Set PCLK pin.
 
         config CAMERA_PIN_Y2
             int "Y2"
             default 15
             help
-                Select Camera Y2 pin.
+                Set Y2 pin.
 
         config CAMERA_PIN_Y3
             int "Y3"
             default 17
             help
-                Select Camera Y3 pin.
+                Set Y3 pin.
 
         config CAMERA_PIN_Y4
             int "Y4"
             default 18
             help
-                Select Camera Y4 pin.
+                Set Y4 pin.
 
         config CAMERA_PIN_Y5
             int "Y5"
             default 16
             help
-                Select Camera Y5 pin.
+                Set Y5 pin.
 
         config CAMERA_PIN_Y6
             int "Y6"
             default 14
             help
-                Select Camera Y6 pin.
+                Set Y6 pin.
 
         config CAMERA_PIN_Y7
             int "Y7"
             default 12
             help
-                Select Camera Y7 pin.
+                Set Y7 pin.
 
         config CAMERA_PIN_Y8
             int "Y8"
             default 11
             help
-                Select Camera Y8 pin.
+                Set Y8 pin.
 
         config CAMERA_PIN_Y9
             int "Y9"
             default 48
             help
-                Select Camera Y9 pin.
+                Set Y9 pin.
 
     endmenu
 endmenu
