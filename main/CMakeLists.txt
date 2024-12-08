@@ -1,4 +1,4 @@
-idf_component_register(SRCS "usb_webcam_main.c"
+idf_component_register(SRCS "main.cpp"
                     INCLUDE_DIRS ".")
 
 include(gen_single_bin)
