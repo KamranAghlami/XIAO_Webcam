@@ -33,7 +33,6 @@ static void mic_task(void *arg)
 
     ESP_ERROR_CHECK(i2s_channel_init_pdm_rx_mode(rx_handle, &pdm_rx_cfg));
     ESP_ERROR_CHECK(i2s_channel_enable(rx_handle));
-    ESP_ERROR_CHECK(gpio_set_level(LED_GPIO, 0x00));
 
     uint8_t buffer[CONFIG_MIC_BIT_DEPTH * 512];
 
@@ -56,13 +55,12 @@ static void mic_task(void *arg)
 
     ESP_ERROR_CHECK(i2s_channel_disable(rx_handle));
     ESP_ERROR_CHECK(i2s_del_channel(rx_handle));
-    ESP_ERROR_CHECK(gpio_set_level(LED_GPIO, 0x01));
 }
 
 extern "C" void app_main(void)
 {
     gpio_reset_pin(LED_GPIO);
-    gpio_set_direction(LED_GPIO, GPIO_MODE_INPUT_OUTPUT);
+    gpio_set_direction(LED_GPIO, GPIO_MODE_OUTPUT);
     gpio_set_level(LED_GPIO, 0x01);
 
     TaskHandle_t mic_task_handle = nullptr;
@@ -82,6 +80,8 @@ extern "C" void app_main(void)
             putc(' ', stdout);
 
         fflush(stdout);
+
+        gpio_set_level(LED_GPIO, value < 0x1fff);
 
         vTaskDelay(pdMS_TO_TICKS(10));
     }
