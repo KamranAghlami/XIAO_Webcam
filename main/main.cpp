@@ -67,13 +67,14 @@ static void mic_task(void *arg)
     };
 
     uac_device_init(&config);
+
+    while (true)
+        vTaskDelay(pdMS_TO_TICKS(10));
 #else
     uint8_t buffer[CONFIG_MIC_BIT_DEPTH * 512];
-#endif
 
     while (true)
     {
-#if !UAC_ENABLE
         size_t bytes_read = 0;
 
         if (i2s_channel_read(rx_handle, buffer, sizeof(buffer), &bytes_read, 100) == ESP_OK && bytes_read > 4)
@@ -85,10 +86,10 @@ static void mic_task(void *arg)
         }
         else
             ESP_LOGW(TAG, "read failed!");
-#endif
 
         vTaskDelay(pdMS_TO_TICKS(10));
     }
+#endif
 
     ESP_ERROR_CHECK(i2s_channel_disable(rx_handle));
     ESP_ERROR_CHECK(i2s_del_channel(rx_handle));
