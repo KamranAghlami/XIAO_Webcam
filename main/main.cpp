@@ -20,7 +20,7 @@ static esp_err_t uac_device_input_cb(uint8_t *buf, size_t len, size_t *bytes_rea
 {
     auto rx_handle = static_cast<i2s_chan_handle_t>(arg);
 
-    if (i2s_channel_read(rx_handle, buf, len, bytes_read, 100) == ESP_OK && *bytes_read > 4)
+    if (i2s_channel_read(rx_handle, buf, len, bytes_read, 0) == ESP_OK && *bytes_read > 4)
     {
         auto samples_begin = reinterpret_cast<int16_t *>(buf);
         auto samples_end = samples_begin + (*bytes_read / sizeof(int16_t));
