@@ -6,11 +6,33 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "usb_device_uac.h"
+
+#define UAC_ENABLE 1
 
 constexpr const char *TAG = "XIAO_Webcam";
 constexpr const gpio_num_t LED_GPIO = GPIO_NUM_21;
 
 int16_t value = 0;
+
+#if UAC_ENABLE
+static esp_err_t uac_device_input_cb(uint8_t *buf, size_t len, size_t *bytes_read, void *arg)
+{
+    auto rx_handle = static_cast<i2s_chan_handle_t>(arg);
+
+    if (i2s_channel_read(rx_handle, buf, len, bytes_read, 100) == ESP_OK && *bytes_read > 4)
+    {
+        auto samples_begin = reinterpret_cast<int16_t *>(buf);
+        auto samples_end = samples_begin + (*bytes_read / sizeof(int16_t));
+
+        value = *std::max_element(samples_begin, samples_end) << 2;
+    }
+    else
+        ESP_LOGW(TAG, "read failed!");
+
+    return ESP_OK;
+}
+#endif
 
 static void mic_task(void *arg)
 {
@@ -34,10 +56,24 @@ static void mic_task(void *arg)
     ESP_ERROR_CHECK(i2s_channel_init_pdm_rx_mode(rx_handle, &pdm_rx_cfg));
     ESP_ERROR_CHECK(i2s_channel_enable(rx_handle));
 
+#if UAC_ENABLE
+    uac_device_config_t config{
+        .skip_tinyusb_init = false,
+        .output_cb = nullptr,
+        .input_cb = uac_device_input_cb,
+        .set_mute_cb = nullptr,
+        .set_volume_cb = nullptr,
+        .cb_ctx = rx_handle,
+    };
+
+    uac_device_init(&config);
+#else
     uint8_t buffer[CONFIG_MIC_BIT_DEPTH * 512];
+#endif
 
     while (true)
     {
+#if !UAC_ENABLE
         size_t bytes_read = 0;
 
         if (i2s_channel_read(rx_handle, buffer, sizeof(buffer), &bytes_read, 100) == ESP_OK && bytes_read > 4)
@@ -49,6 +85,7 @@ static void mic_task(void *arg)
         }
         else
             ESP_LOGW(TAG, "read failed!");
+#endif
 
         vTaskDelay(pdMS_TO_TICKS(10));
     }
