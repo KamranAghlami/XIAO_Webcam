@@ -8,11 +8,34 @@
 constexpr const gpio_num_t BTN_GPIO = GPIO_NUM_0;
 constexpr const gpio_num_t LED_GPIO = GPIO_NUM_21;
 
+float alpha = 0.99f;
+
 static esp_err_t uac_device_input_cb(uint8_t *buf, size_t len, size_t *bytes_read, void *arg)
 {
     auto rx_handle = static_cast<i2s_chan_handle_t>(arg);
 
-    return i2s_channel_read(rx_handle, buf, len, bytes_read, 20);
+    auto err = i2s_channel_read(rx_handle, buf, len, bytes_read, 20);
+
+    if (err == ESP_OK)
+    {
+        auto samples_begin = reinterpret_cast<int16_t *>(buf);
+        auto samples_end = samples_begin + (*bytes_read / sizeof(int16_t));
+
+        static int16_t prev_input = 0;
+        static int16_t prev_output = 0;
+
+        for (; samples_begin != samples_end; samples_begin++)
+        {
+            int16_t temp = *samples_begin;
+
+            *samples_begin = *samples_begin - prev_input + alpha * prev_output;
+
+            prev_input = temp;
+            prev_output = *samples_begin;
+        }
+    }
+
+    return err;
 }
 
 extern "C" void app_main(void)
@@ -62,13 +85,9 @@ extern "C" void app_main(void)
     while (true)
     {
         if (!gpio_get_level(BTN_GPIO))
-        {
-            gpio_set_level(LED_GPIO, 0x00);
+            alpha -= 0.01f;
 
-            break;
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(10));
+        vTaskDelay(pdMS_TO_TICKS(500));
     }
 
     ESP_ERROR_CHECK(i2s_channel_disable(rx_handle));
