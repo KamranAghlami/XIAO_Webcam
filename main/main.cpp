@@ -1,43 +1,35 @@
-#include <algorithm>
-
 #include "driver/gpio.h"
 #include "driver/i2s_pdm.h"
 #include "esp_err.h"
-#include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "usb_device_uac.h"
 
-#define UAC_ENABLE 1
-
-constexpr const char *TAG = "XIAO_Webcam";
+constexpr const gpio_num_t BTN_GPIO = GPIO_NUM_0;
 constexpr const gpio_num_t LED_GPIO = GPIO_NUM_21;
 
-int16_t value = 0;
-
-#if UAC_ENABLE
 static esp_err_t uac_device_input_cb(uint8_t *buf, size_t len, size_t *bytes_read, void *arg)
 {
     auto rx_handle = static_cast<i2s_chan_handle_t>(arg);
 
-    if (i2s_channel_read(rx_handle, buf, len, bytes_read, 0) == ESP_OK && *bytes_read > 4)
-    {
-        auto samples_begin = reinterpret_cast<int16_t *>(buf);
-        auto samples_end = samples_begin + (*bytes_read / sizeof(int16_t));
-
-        value = *std::max_element(samples_begin, samples_end) << 2;
-    }
-    else
-        ESP_LOGW(TAG, "read failed!");
-
-    return ESP_OK;
+    return i2s_channel_read(rx_handle, buf, len, bytes_read, 20);
 }
-#endif
 
-static void mic_task(void *arg)
+extern "C" void app_main(void)
 {
+    gpio_reset_pin(BTN_GPIO);
+    gpio_set_direction(BTN_GPIO, GPIO_MODE_INPUT);
+    gpio_set_pull_mode(BTN_GPIO, GPIO_PULLUP_ONLY);
+
+    gpio_reset_pin(LED_GPIO);
+    gpio_set_direction(LED_GPIO, GPIO_MODE_OUTPUT);
+    gpio_set_level(LED_GPIO, 0x01);
+
+    while (!gpio_get_level(BTN_GPIO))
+        vTaskDelay(pdMS_TO_TICKS(10));
+
     i2s_chan_handle_t rx_handle = nullptr;
-    i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_AUTO, I2S_ROLE_MASTER);
+    i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
 
     ESP_ERROR_CHECK(i2s_new_channel(&chan_cfg, nullptr, &rx_handle));
 
@@ -56,7 +48,6 @@ static void mic_task(void *arg)
     ESP_ERROR_CHECK(i2s_channel_init_pdm_rx_mode(rx_handle, &pdm_rx_cfg));
     ESP_ERROR_CHECK(i2s_channel_enable(rx_handle));
 
-#if UAC_ENABLE
     uac_device_config_t config{
         .skip_tinyusb_init = false,
         .output_cb = nullptr,
@@ -66,61 +57,22 @@ static void mic_task(void *arg)
         .cb_ctx = rx_handle,
     };
 
-    uac_device_init(&config);
-
-    while (true)
-        vTaskDelay(pdMS_TO_TICKS(10));
-#else
-    uint8_t buffer[CONFIG_MIC_BIT_DEPTH * 512];
+    ESP_ERROR_CHECK(uac_device_init(&config));
 
     while (true)
     {
-        size_t bytes_read = 0;
-
-        if (i2s_channel_read(rx_handle, buffer, sizeof(buffer), &bytes_read, 100) == ESP_OK && bytes_read > 4)
+        if (!gpio_get_level(BTN_GPIO))
         {
-            auto samples_begin = reinterpret_cast<int16_t *>(&buffer[0]);
-            auto samples_end = samples_begin + (bytes_read / sizeof(int16_t));
+            gpio_set_level(LED_GPIO, 0x00);
 
-            value = *std::max_element(samples_begin, samples_end) << 2;
+            break;
         }
-        else
-            ESP_LOGW(TAG, "read failed!");
 
         vTaskDelay(pdMS_TO_TICKS(10));
     }
-#endif
 
     ESP_ERROR_CHECK(i2s_channel_disable(rx_handle));
     ESP_ERROR_CHECK(i2s_del_channel(rx_handle));
-}
 
-extern "C" void app_main(void)
-{
-    gpio_reset_pin(LED_GPIO);
-    gpio_set_direction(LED_GPIO, GPIO_MODE_OUTPUT);
-    gpio_set_level(LED_GPIO, 0x01);
-
-    TaskHandle_t mic_task_handle = nullptr;
-
-    xTaskCreatePinnedToCore(mic_task, "Microphone", 12U * 1024U, nullptr, 5, &mic_task_handle, !CONFIG_ESP_MAIN_TASK_AFFINITY);
-
-    while (true)
-    {
-        fputs("\r\tamplitude: ", stdout);
-
-        uint8_t i = 0;
-
-        for (; i < (value / 1024); i++)
-            putc('I', stdout);
-
-        for (; i < 32; i++)
-            putc(' ', stdout);
-
-        fflush(stdout);
-
-        gpio_set_level(LED_GPIO, value < 0x1fff);
-
-        vTaskDelay(pdMS_TO_TICKS(10));
-    }
+    esp_restart();
 }
