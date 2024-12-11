@@ -1,38 +1,30 @@
-#include "driver/gpio.h"
-#include "driver/i2s_pdm.h"
-#include "esp_err.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "usb_device_uac.h"
+#include <memory>
+#include <cstring>
+
+#include <driver/gpio.h>
+#include <driver/i2s_pdm.h>
+#include <esp_err.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <usb_device_uac.h>
+
+#include "triple_buffer.h"
 
 constexpr const gpio_num_t BTN_GPIO = GPIO_NUM_0;
 constexpr const gpio_num_t LED_GPIO = GPIO_NUM_21;
 
+using buffer_type = triple_buffer<int16_t, CONFIG_MIC_SAMPLE_RATE / 100>;
+
 static esp_err_t uac_device_input_cb(uint8_t *buf, size_t len, size_t *bytes_read, void *arg)
 {
-    auto rx_handle = static_cast<i2s_chan_handle_t>(arg);
-    auto err = i2s_channel_read(rx_handle, buf, len, bytes_read, portMAX_DELAY);
+    const auto buffer = static_cast<buffer_type *>(arg)->get_front_buffer();
+    const auto size = std::min(buffer->size(), len);
 
-    if (err == ESP_OK)
-    {
-        auto samples_begin = reinterpret_cast<int16_t *>(buf);
-        auto samples_end = samples_begin + (*bytes_read / sizeof(int16_t));
+    std::memcpy(buf, buffer->data(), size);
 
-        static int16_t prev_input = 0;
-        static int16_t prev_output = 0;
+    *bytes_read = size;
 
-        for (; samples_begin != samples_end; samples_begin++)
-        {
-            int16_t temp = *samples_begin;
-
-            *samples_begin = *samples_begin - prev_input + 0.99f * prev_output;
-
-            prev_input = temp;
-            prev_output = *samples_begin;
-        }
-    }
-
-    return err;
+    return ESP_OK;
 }
 
 extern "C" void app_main(void)
@@ -47,6 +39,19 @@ extern "C" void app_main(void)
 
     while (!gpio_get_level(BTN_GPIO))
         vTaskDelay(pdMS_TO_TICKS(10));
+
+    auto buffer = std::make_unique<buffer_type>();
+
+    uac_device_config_t config = {
+        .skip_tinyusb_init = false,
+        .output_cb = nullptr,
+        .input_cb = uac_device_input_cb,
+        .set_mute_cb = nullptr,
+        .set_volume_cb = nullptr,
+        .cb_ctx = buffer.get(),
+    };
+
+    ESP_ERROR_CHECK(uac_device_init(&config));
 
     i2s_chan_handle_t rx_handle = nullptr;
     i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
@@ -68,23 +73,33 @@ extern "C" void app_main(void)
     ESP_ERROR_CHECK(i2s_channel_init_pdm_rx_mode(rx_handle, &pdm_rx_cfg));
     ESP_ERROR_CHECK(i2s_channel_enable(rx_handle));
 
-    uac_device_config_t config{
-        .skip_tinyusb_init = false,
-        .output_cb = nullptr,
-        .input_cb = uac_device_input_cb,
-        .set_mute_cb = nullptr,
-        .set_volume_cb = nullptr,
-        .cb_ctx = rx_handle,
-    };
-
-    ESP_ERROR_CHECK(uac_device_init(&config));
-
     while (true)
     {
         if (!gpio_get_level(BTN_GPIO))
             break;
 
-        vTaskDelay(pdMS_TO_TICKS(10));
+        auto back_buff = buffer->get_back_buffer();
+        size_t bytes_read = 0;
+
+        auto err = i2s_channel_read(rx_handle, back_buff->data(), back_buff->size() * sizeof(buffer_type::sample_type), &bytes_read, portMAX_DELAY);
+
+        if (err == ESP_OK)
+        {
+            static int16_t prev_input = 0;
+            static int16_t prev_output = 0;
+
+            for (auto &sample : *back_buff)
+            {
+                int16_t temp = sample;
+
+                sample = sample - prev_input + 0.99f * prev_output;
+
+                prev_input = temp;
+                prev_output = sample;
+            }
+
+            buffer->swap_buffers();
+        }
     }
 
     ESP_ERROR_CHECK(i2s_channel_disable(rx_handle));
