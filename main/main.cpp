@@ -13,7 +13,7 @@
 constexpr const gpio_num_t BTN_GPIO = GPIO_NUM_0;
 constexpr const gpio_num_t LED_GPIO = GPIO_NUM_21;
 
-using buffer_type = triple_buffer<int16_t, CONFIG_MIC_SAMPLE_RATE / 100>;
+using buffer_type = triple_buffer<int16_t, CONFIG_MIC_SAMPLE_RATE / (1000 / CONFIG_UAC_MIC_INTERVAL_MS)>;
 
 static esp_err_t uac_device_input_cb(uint8_t *buf, size_t len, size_t *bytes_read, void *arg)
 {
