@@ -81,7 +81,7 @@ extern "C" void app_main(void)
         auto back_buff = buffer->get_back_buffer();
         size_t bytes_read = 0;
 
-        auto err = i2s_channel_read(rx_handle, back_buff->data(), back_buff->size() * sizeof(buffer_type::sample_type), &bytes_read, portMAX_DELAY);
+        auto err = i2s_channel_read(rx_handle, back_buff->data(), back_buff->size() * sizeof(buffer_type::sample_type), &bytes_read, CONFIG_UAC_MIC_INTERVAL_MS);
 
         if (err == ESP_OK)
         {
