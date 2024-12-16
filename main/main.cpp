@@ -5,21 +5,20 @@
 #include <driver/i2s_pdm.h>
 #include <esp_err.h>
 #include <freertos/FreeRTOS.h>
+#include <freertos/stream_buffer.h>
 #include <freertos/task.h>
 #include <usb_device_uac.h>
 
-#include "ring_buffer.h"
-
 constexpr const gpio_num_t BTN_GPIO = GPIO_NUM_0;
 constexpr const gpio_num_t LED_GPIO = GPIO_NUM_21;
-
-using buffer_type = ring_buffer<2 * (CONFIG_MIC_BIT_DEPTH / 8) * CONFIG_MIC_SAMPLE_RATE / (1000 / CONFIG_UAC_MIC_INTERVAL_MS)>;
+constexpr const size_t sample_size = CONFIG_MIC_BIT_DEPTH / 8;
+constexpr const size_t buffer_size = 2 * sample_size * CONFIG_MIC_SAMPLE_RATE / (1000 / CONFIG_UAC_MIC_INTERVAL_MS);
 
 static esp_err_t uac_device_input_cb(uint8_t *buf, size_t len, size_t *bytes_read, void *arg)
 {
-    const auto buffer = static_cast<buffer_type *>(arg);
+    auto stream_buffer = static_cast<StreamBufferHandle_t>(arg);
 
-    *bytes_read = buffer->read(buf, len);
+    *bytes_read = xStreamBufferReceive(stream_buffer, buf, len, portMAX_DELAY);
 
     if (size_t sample_count = *bytes_read / 2)
     {
@@ -46,11 +45,12 @@ static esp_err_t uac_device_input_cb(uint8_t *buf, size_t len, size_t *bytes_rea
 
 bool IRAM_ATTR on_receive(i2s_chan_handle_t handle, i2s_event_data_t *event, void *arg)
 {
-    const auto buffer = static_cast<buffer_type *>(arg);
+    auto stream_buffer = static_cast<StreamBufferHandle_t>(arg);
+    auto higher_priority_task_woken = pdFALSE;
 
-    buffer->write(event->dma_buf, event->size);
+    xStreamBufferSendFromISR(stream_buffer, event->dma_buf, event->size, &higher_priority_task_woken);
 
-    return false;
+    return higher_priority_task_woken;
 }
 
 extern "C" void app_main(void)
@@ -66,7 +66,7 @@ extern "C" void app_main(void)
     while (!gpio_get_level(BTN_GPIO))
         vTaskDelay(pdMS_TO_TICKS(10));
 
-    auto buffer = std::make_unique<buffer_type>();
+    auto stream_buffer = xStreamBufferCreate(buffer_size, sample_size);
 
     uac_device_config_t config = {
         .skip_tinyusb_init = false,
@@ -74,7 +74,7 @@ extern "C" void app_main(void)
         .input_cb = uac_device_input_cb,
         .set_mute_cb = nullptr,
         .set_volume_cb = nullptr,
-        .cb_ctx = buffer.get(),
+        .cb_ctx = stream_buffer,
     };
 
     ESP_ERROR_CHECK(uac_device_init(&config));
@@ -105,7 +105,7 @@ extern "C" void app_main(void)
         .on_send_q_ovf = nullptr,
     };
 
-    ESP_ERROR_CHECK(i2s_channel_register_event_callback(rx_handle, &event_callbacks, buffer.get()));
+    ESP_ERROR_CHECK(i2s_channel_register_event_callback(rx_handle, &event_callbacks, stream_buffer));
     ESP_ERROR_CHECK(i2s_channel_enable(rx_handle));
 
     while (true)
@@ -118,6 +118,8 @@ extern "C" void app_main(void)
 
     ESP_ERROR_CHECK(i2s_channel_disable(rx_handle));
     ESP_ERROR_CHECK(i2s_del_channel(rx_handle));
+
+    vStreamBufferDelete(stream_buffer);
 
     esp_restart();
 }
