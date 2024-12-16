@@ -4,74 +4,51 @@
 #include <driver/gpio.h>
 #include <driver/i2s_pdm.h>
 #include <esp_err.h>
-#include <esp_log.h>
-#include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-// #include <usb_device_uac.h>
+#include <usb_device_uac.h>
 
 #include "ring_buffer.h"
 
-constexpr const char *TAG = "main";
 constexpr const gpio_num_t BTN_GPIO = GPIO_NUM_0;
 constexpr const gpio_num_t LED_GPIO = GPIO_NUM_21;
 
-using buffer_type = ring_buffer<10 * (CONFIG_MIC_BIT_DEPTH / 8) * CONFIG_MIC_SAMPLE_RATE / (1000 / CONFIG_UAC_MIC_INTERVAL_MS)>;
+using buffer_type = ring_buffer<2 * (CONFIG_MIC_BIT_DEPTH / 8) * CONFIG_MIC_SAMPLE_RATE / (1000 / CONFIG_UAC_MIC_INTERVAL_MS)>;
 
-// static esp_err_t uac_device_input_cb(uint8_t *buf, size_t len, size_t *bytes_read, void *arg)
-// {
-//     const auto buffer = static_cast<buffer_type *>(arg);
-
-//     *bytes_read = buffer->read(buf, len);
-
-//     if (size_t sample_count = *bytes_read / 2)
-//     {
-//         auto samples_begin = reinterpret_cast<int16_t *>(buf);
-//         auto samples_end = samples_begin + sample_count;
-
-//         for (; samples_begin != samples_end; samples_begin++)
-//         {
-//             static int16_t prev_input = 0;
-//             static int16_t prev_output = 0;
-
-//             int16_t &sample = *samples_begin;
-//             int16_t temp = sample;
-
-//             sample = sample - prev_input + 0.99f * prev_output;
-
-//             prev_input = temp;
-//             prev_output = sample;
-//         }
-//     }
-
-//     return ESP_OK;
-// }
-
-volatile size_t received = 0;
-volatile size_t overflowed = 0;
-
-bool on_receive(i2s_chan_handle_t handle, i2s_event_data_t *event, void *arg)
+static esp_err_t uac_device_input_cb(uint8_t *buf, size_t len, size_t *bytes_read, void *arg)
 {
     const auto buffer = static_cast<buffer_type *>(arg);
-    const auto written = buffer->write(event->dma_buf, event->size);
 
-    const auto state = taskENTER_CRITICAL_FROM_ISR();
+    *bytes_read = buffer->read(buf, len);
 
-    received += written;
-    overflowed += event->size - written;
+    if (size_t sample_count = *bytes_read / 2)
+    {
+        auto samples_begin = reinterpret_cast<int16_t *>(buf);
+        auto samples_end = samples_begin + sample_count;
 
-    taskEXIT_CRITICAL_FROM_ISR(state);
+        for (; samples_begin != samples_end; samples_begin++)
+        {
+            static int16_t prev_input = 0;
+            static int16_t prev_output = 0;
 
-    return false;
+            int16_t &sample = *samples_begin;
+            int16_t temp = sample;
+
+            sample = sample - prev_input + 0.99f * prev_output;
+
+            prev_input = temp;
+            prev_output = sample;
+        }
+    }
+
+    return ESP_OK;
 }
 
-bool on_receive_overflow(i2s_chan_handle_t handle, i2s_event_data_t *event, void *arg)
+bool IRAM_ATTR on_receive(i2s_chan_handle_t handle, i2s_event_data_t *event, void *arg)
 {
-    const auto state = taskENTER_CRITICAL_FROM_ISR();
+    const auto buffer = static_cast<buffer_type *>(arg);
 
-    overflowed += event->size;
-
-    taskEXIT_CRITICAL_FROM_ISR(state);
+    buffer->write(event->dma_buf, event->size);
 
     return false;
 }
@@ -91,16 +68,16 @@ extern "C" void app_main(void)
 
     auto buffer = std::make_unique<buffer_type>();
 
-    // uac_device_config_t config = {
-    //     .skip_tinyusb_init = false,
-    //     .output_cb = nullptr,
-    //     .input_cb = uac_device_input_cb,
-    //     .set_mute_cb = nullptr,
-    //     .set_volume_cb = nullptr,
-    //     .cb_ctx = buffer.get(),
-    // };
+    uac_device_config_t config = {
+        .skip_tinyusb_init = false,
+        .output_cb = nullptr,
+        .input_cb = uac_device_input_cb,
+        .set_mute_cb = nullptr,
+        .set_volume_cb = nullptr,
+        .cb_ctx = buffer.get(),
+    };
 
-    // ESP_ERROR_CHECK(uac_device_init(&config));
+    ESP_ERROR_CHECK(uac_device_init(&config));
 
     i2s_chan_handle_t rx_handle = nullptr;
     const i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
@@ -123,7 +100,7 @@ extern "C" void app_main(void)
 
     const i2s_event_callbacks_t event_callbacks = {
         .on_recv = on_receive,
-        .on_recv_q_ovf = on_receive_overflow,
+        .on_recv_q_ovf = nullptr,
         .on_sent = nullptr,
         .on_send_q_ovf = nullptr,
     };
@@ -131,44 +108,12 @@ extern "C" void app_main(void)
     ESP_ERROR_CHECK(i2s_channel_register_event_callback(rx_handle, &event_callbacks, buffer.get()));
     ESP_ERROR_CHECK(i2s_channel_enable(rx_handle));
 
-    portMUX_TYPE mux;
-    portMUX_INITIALIZE(&mux);
-
-    auto now = esp_timer_get_time();
-    size_t read = 0;
-    float average = 44.1f;
-
     while (true)
     {
         if (!gpio_get_level(BTN_GPIO))
             break;
 
-        uint8_t buf[128];
-        size_t r = 0;
-
-        do
-        {
-            r = buffer->read(buf, sizeof(buf));
-            read += r;
-        } while (r);
-
-        if (esp_timer_get_time() > now + 1000000)
-        {
-            taskENTER_CRITICAL(&mux);
-            size_t recv = received;
-            size_t ofld = overflowed;
-
-            received = 0;
-            overflowed = 0;
-            taskEXIT_CRITICAL(&mux);
-
-            average = (0.90f * average) + (0.10f * (read / 2000));
-
-            ESP_LOGI(TAG, "received: %zu, read: %zu, overflowed: %zu, average: %.03fks/s", recv / 2, read / 2, ofld / 2, average);
-
-            read = 0;
-            now = esp_timer_get_time();
-        }
+        vTaskDelay(pdMS_TO_TICKS(500));
     }
 
     ESP_ERROR_CHECK(i2s_channel_disable(rx_handle));
