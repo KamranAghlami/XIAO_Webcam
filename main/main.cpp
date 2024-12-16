@@ -108,6 +108,8 @@ extern "C" void app_main(void)
     ESP_ERROR_CHECK(i2s_channel_register_event_callback(rx_handle, &event_callbacks, stream_buffer));
     ESP_ERROR_CHECK(i2s_channel_enable(rx_handle));
 
+    gpio_set_level(LED_GPIO, 0x00);
+
     while (true)
     {
         if (!gpio_get_level(BTN_GPIO))
@@ -115,6 +117,8 @@ extern "C" void app_main(void)
 
         vTaskDelay(pdMS_TO_TICKS(500));
     }
+
+    gpio_set_level(LED_GPIO, 0x01);
 
     ESP_ERROR_CHECK(i2s_channel_disable(rx_handle));
     ESP_ERROR_CHECK(i2s_del_channel(rx_handle));
