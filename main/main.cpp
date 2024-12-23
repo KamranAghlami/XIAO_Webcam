@@ -20,7 +20,7 @@ static esp_err_t uac_device_input_cb(uint8_t *buf, size_t len, size_t *bytes_rea
 
     *bytes_read = xStreamBufferReceive(stream_buffer, buf, len, portMAX_DELAY);
 
-    if (size_t sample_count = *bytes_read / 2)
+    if (size_t sample_count = *bytes_read / sample_size)
     {
         auto samples_begin = reinterpret_cast<int16_t *>(buf);
         auto samples_end = samples_begin + sample_count;
