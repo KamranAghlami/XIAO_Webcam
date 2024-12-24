@@ -11,8 +11,8 @@
 
 constexpr const gpio_num_t BTN_GPIO = GPIO_NUM_0;
 constexpr const gpio_num_t LED_GPIO = GPIO_NUM_21;
-constexpr const size_t sample_size = CONFIG_MIC_BIT_DEPTH / 8;
-constexpr const size_t buffer_size = 2 * sample_size * CONFIG_MIC_SAMPLE_RATE / (1000 / CONFIG_UAC_MIC_INTERVAL_MS);
+constexpr const size_t SAMPLE_SIZE = CONFIG_MIC_BIT_DEPTH / 8;
+constexpr const size_t BUFFER_SIZE = 2 * SAMPLE_SIZE * CONFIG_MIC_SAMPLE_RATE / (1000 / CONFIG_UAC_MIC_INTERVAL_MS);
 
 static esp_err_t uac_device_input_cb(uint8_t *buf, size_t len, size_t *bytes_read, void *arg)
 {
@@ -20,7 +20,7 @@ static esp_err_t uac_device_input_cb(uint8_t *buf, size_t len, size_t *bytes_rea
 
     *bytes_read = xStreamBufferReceive(stream_buffer, buf, len, portMAX_DELAY);
 
-    if (size_t sample_count = *bytes_read / sample_size)
+    if (size_t sample_count = *bytes_read / SAMPLE_SIZE)
     {
         auto samples_begin = reinterpret_cast<int16_t *>(buf);
         auto samples_end = samples_begin + sample_count;
@@ -66,7 +66,7 @@ extern "C" void app_main(void)
     while (!gpio_get_level(BTN_GPIO))
         vTaskDelay(pdMS_TO_TICKS(10));
 
-    auto stream_buffer = xStreamBufferCreate(buffer_size, sample_size);
+    auto stream_buffer = xStreamBufferCreate(BUFFER_SIZE, SAMPLE_SIZE);
 
     uac_device_config_t config = {
         .skip_tinyusb_init = false,
