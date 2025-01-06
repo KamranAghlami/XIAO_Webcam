@@ -8,9 +8,9 @@
 #include <tusb_cdc_acm.h>
 #include <tusb_console.h>
 
-static const char *TAG = "cdc_example";
+static constexpr const char *TAG = "cdc_example";
 
-extern "C" void app_main(void)
+extern "C" void app_main()
 {
     ESP_LOGI(TAG, "USB initialization");
 
