@@ -64,7 +64,7 @@ jobs:
         if: success() || failure()
         uses: fjogeleit/http-request-action@v1
         with:
-          url: 'https://node-red.geeken.me/github_assistant_bot'
+          url: 'http://node-red.geekytechies.org/github_assistant_bot'
           data: |
             {
               "key": "${{secrets.ASSISTANT_BOT_KEY}}",
