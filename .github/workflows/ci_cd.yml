@@ -26,7 +26,7 @@ jobs:
           -u $(id -u) \
           -e HOME=/tmp \
           -e IDF_TARGET=esp32s3 \
-          espressif/idf:release-v5.3 \
+          espressif/idf:release-v5.5 \
           idf.py build > build/output.txt
           cat build/output.txt | tee >(grep ' build/${{github.event.repository.name}}.bin' | awk '{for (i = 1; i <= NF; i++) {if ($i ~ /^0x[0-9a-fA-F]+$/) offset = $i; else if ($i ~ /\.bin$/) {gsub(/^.*\//, "", $i); print offset, $i}}}' > build/offsets.txt)
 
